@@ -625,6 +625,13 @@ internal sealed class TrayApp : ApplicationContext
             item.Click += (_, _) => TogglePinned(id, name);
             menu.DropDownItems.Add(item);
         }
+        if (entries.Any(e => e.Online && _pinned.All(p => p.Id != e.Id)))
+        {
+            menu.DropDownItems.Add(new ToolStripSeparator());
+            var all = new ToolStripMenuItem(L.T("Tümünü tepsiye ekle", "Show all in tray"));
+            all.Click += (_, _) => PinAll(entries.Where(e => e.Online).Select(e => new PinnedDevice(e.Id, e.Name)));
+            menu.DropDownItems.Add(all);
+        }
         // Text color per pinned device, to tell the icons apart
         if (_pinned.Count > 0)
         {
@@ -648,6 +655,15 @@ internal sealed class TrayApp : ApplicationContext
         menu.DropDownItems.Add(new ToolStripMenuItem(
             L.T("Hiçbiri seçili değilse tek kulaklık simgesi görünür", "With none checked, one headset icon is shown"))
             { Enabled = false });
+    }
+
+    /// "Show all in tray": pins every online device that isn't pinned yet (each gets its own color).
+    private void PinAll(IEnumerable<PinnedDevice> devices)
+    {
+        foreach (var d in devices)
+            if (_pinned.All(p => p.Id != d.Id)) _pinned = TrayPins.Toggle(_pinned, d);
+        TrayPins.Save(_pinned);
+        SyncPinned();
     }
 
     private void SetPinColor(string id, int argb)
