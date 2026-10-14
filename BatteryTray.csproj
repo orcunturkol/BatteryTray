@@ -9,7 +9,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>BatteryTray</AssemblyName>
     <RootNamespace>BatteryTray</RootNamespace>
-    <Version>0.0.5</Version>
+    <Version>0.0.6</Version>
     <!-- Compress the self-contained single-file exe (~180 MB -> roughly 70-80 MB).
          Only takes effect for a self-contained, single-file publish (see README). -->
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>

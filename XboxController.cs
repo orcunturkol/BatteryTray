@@ -39,17 +39,21 @@ internal static class XboxController
         _ => null,
     };
 
+    internal static string NameOf(uint i) =>
+        i == 0 ? L.T("Xbox kolu", "Xbox controller") : L.T($"Xbox kolu {i + 1}", $"Xbox controller {i + 1}");
+
     /// One entry per connected controller; empty when none (or when XInput isn't available).
     public static IReadOnlyList<DeviceStatus> Read()
     {
         var result = new List<DeviceStatus>();
         if (_unavailable) return result;
+        int btIndex = 0;
         try
         {
             for (uint i = 0; i < 4; i++)
             {
                 bool here = XInputGetState(i, out _) == ErrorSuccess;
-                string name = i == 0 ? L.T("Xbox kolu", "Xbox controller") : L.T($"Xbox kolu {i + 1}", $"Xbox controller {i + 1}");
+                string name = NameOf(i);
                 if (!here)
                 {
                     if (Connected[i] is not null) { Log.W($"[Xbox] {Connected[i]} disconnected"); Connected[i] = null!; }
@@ -60,9 +64,16 @@ internal static class XboxController
                     result.Add(new(DeviceKind.Gamepad, name, null, false, L.T("Okunamadı", "Read failed")));
                     continue;
                 }
-                var wgi = b.Type is TypeWired or TypeAlkaline or TypeNimh ? null : ReadWinRt((int)i);
-                string summary = $"type={b.Type} level={b.Level}" + (wgi is { } w ? $" winrt={w.Remaining}/{w.Full} status={w.Status}" : "");
-                result.Add(Describe(name, b.Type, b.Level, wgi));
+                // XInput can't see a Bluetooth controller's battery: the n-th such controller gets the n-th Bluetooth level
+                int? bt = null;
+                if (b.Type is not (TypeWired or TypeAlkaline or TypeNimh))
+                {
+                    var levels = BluetoothLevels();
+                    if (btIndex < levels.Count) bt = levels[btIndex];
+                    btIndex++;
+                }
+                string summary = $"type={b.Type} level={b.Level}" + (bt is int v ? $" bluetooth={v}%" : "");
+                result.Add(Describe(name, b.Type, b.Level, bt));
                 if (Connected[i] != summary)
                 {
                     Connected[i] = summary;
@@ -79,30 +90,33 @@ internal static class XboxController
         return result;
     }
 
-    /// Bluetooth controllers often answer XInput with "battery type disconnected" although they are connected; Windows
-    /// still knows their charge through Windows.Gaming.Input (exact capacities), so ask that instead.
-    private static (int Remaining, int Full, string Status)? ReadWinRt(int index)
+    // Bluetooth levels are looked up in the background (a few ms of device-manager calls) and cached for 20 s
+    private static List<int> _btLevels = new();
+    private static DateTime _btAt = DateTime.MinValue;
+    private static bool _btBusy;
+
+    private static List<int> BluetoothLevels()
     {
-        try
+        if (!_btBusy && DateTime.Now - _btAt > TimeSpan.FromSeconds(20))
         {
-            var pads = Windows.Gaming.Input.Gamepad.Gamepads;
-            if (index >= pads.Count) return null;
-            var r = pads[index].TryGetBatteryReport();
-            if (r?.RemainingCapacityInMilliwattHours is not int rem || r.FullChargeCapacityInMilliwattHours is not int full || full <= 0) return null;
-            return (rem, full, r.Status.ToString());
+            _btBusy = true;
+            _btAt = DateTime.Now;
+            Task.Run(() =>
+            {
+                try { _btLevels = BtBattery.Levels("Xbox"); }
+                finally { _btBusy = false; }
+            });
         }
-        catch (Exception ex) { Log.Debug("[Xbox] WinRT battery error: " + ex.Message); return null; }
+        return _btLevels;
     }
 
-    internal static DeviceStatus Describe(string name, byte type, byte level, (int Remaining, int Full, string Status)? wgi = null)
+    internal static DeviceStatus Describe(string name, byte type, byte level, int? bluetoothPercent = null)
     {
         if (type is not (TypeWired or TypeAlkaline or TypeNimh))
         {
-            // XInput has nothing usable for this controller
-            if (wgi is not { } w) return new(DeviceKind.Gamepad, name, null, false, L.T("Pil düzeyi alınamadı", "Battery level unavailable"));
-            int wp = Math.Clamp((int)Math.Round(100.0 * w.Remaining / w.Full), 0, 100);
-            bool charging = w.Status == "Charging";
-            return new(DeviceKind.Gamepad, name, wp, charging, Notes.Make(L.T("Kablosuz", "Wireless"), charging));
+            // XInput has nothing usable for this controller (typical for Bluetooth)
+            if (bluetoothPercent is not int bp) return new(DeviceKind.Gamepad, name, null, false, L.T("Pil düzeyi alınamadı", "Battery level unavailable"));
+            return new(DeviceKind.Gamepad, name, bp, false, L.T("Bluetooth", "Bluetooth"));
         }
         if (type == TypeWired)
             return new(DeviceKind.Gamepad, name, null, false, Notes.Cable, Wired: true);
