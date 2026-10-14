@@ -42,21 +42,6 @@ internal static class XboxController
     internal static string NameOf(uint i) =>
         i == 0 ? L.T("Xbox kolu", "Xbox controller") : L.T($"Xbox kolu {i + 1}", $"Xbox controller {i + 1}");
 
-    // Undocumented export (ordinal 103) that the Xbox accessories software uses to switch a controller off
-    [DllImport("xinput1_4.dll", EntryPoint = "#103")] private static extern uint XInputPowerOffController(uint index);
-
-    /// Switches the controller in the given XInput slot off, like holding the Xbox button for six seconds.
-    public static bool PowerOff(uint index)
-    {
-        try
-        {
-            uint r = XInputPowerOffController(index);
-            Log.W($"[Xbox] power off slot {index} -> {r}");
-            return r == ErrorSuccess;
-        }
-        catch (Exception ex) { Log.W("[Xbox] power off failed: " + ex.Message); return false; }
-    }
-
     /// One entry per connected controller; empty when none (or when XInput isn't available).
     public static IReadOnlyList<DeviceStatus> Read()
     {
