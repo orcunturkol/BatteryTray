@@ -198,7 +198,7 @@ internal static class AtkMouse
                 Notes.Make(cable ? Notes.Cable : Notes.Wireless, charging, full), Details: Describe(cfg));
 
             if (_logged.Add(dev.ProductID))
-                Log.W($"[ATK] {name} PID=0x{dev.ProductID:X4}: {power.Percent}%, {power.Millivolts} mV, usbPower={power.UsbPower}, " +
+                Log.Debug($"[ATK] {name} PID=0x{dev.ProductID:X4}: {power.Percent}%, {power.Millivolts} mV, usbPower={power.UsbPower}, " +
                       $"config: dpi={cfg.Dpi} stage={cfg.Stage}/{cfg.StageCount} polling={cfg.PollingHz} {dev.DevicePath}");
             _lastGood[dev.ProductID] = (st, DateTime.Now);
             return st;

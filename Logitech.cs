@@ -85,7 +85,7 @@ internal static class Logitech
         foreach (var dev in channels)
         {
             bool receiver = IsReceiver(dev);
-            Log.W($"[Logitech] HID++ channel PID=0x{dev.ProductID:X4} \"{HidNames.Of(dev, "?")}\" receiver={receiver}");
+            Log.Debug($"[Logitech] HID++ channel PID=0x{dev.ProductID:X4} \"{HidNames.Of(dev, "?")}\" receiver={receiver}");
             try
             {
                 using var s = Open(dev);
@@ -104,7 +104,7 @@ internal static class Logitech
 
                     var (name, kind) = GetName(s, idx);
                     name ??= HidNames.Of(dev, "Logitech");
-                    Log.W($"[Logitech] index {idx}: \"{name}\" ({kind}), battery feature 0x{battFeat:X4} at index {batt}");
+                    Log.Debug($"[Logitech] index {idx}: \"{name}\" ({kind}), battery feature 0x{battFeat:X4} at index {batt}");
                     list.Add(new Found(dev.DevicePath, idx, name, kind, receiver, battFeat, batt));
                 }
             }
@@ -134,7 +134,7 @@ internal static class Logitech
             if (!_lastRaw.TryGetValue(key, out var prevRaw) || prevRaw != raw)
             {
                 _lastRaw[key] = raw;
-                Log.W($"[Logitech] {f.Name} feature 0x{f.BattFeature:X4} -> {raw}");
+                Log.Debug($"[Logitech] {f.Name} feature 0x{f.BattFeature:X4} -> {raw}");
             }
 
             DeviceStatus st = f.BattFeature switch

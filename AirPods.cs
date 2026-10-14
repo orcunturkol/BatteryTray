@@ -157,7 +157,7 @@ internal static class AirPods
                 string key = $"{d[4]:X2}{d[3]:X2}";   // model id is little-endian (e.g. 0E 20 -> 200E = AirPods Pro)
                 lock (_loggedRaw)
                     if (_loggedRaw.Add(key))
-                        Log.W($"[AirPods] advertisement: model=0x{key} rssi={args.RawSignalStrengthInDBm} raw={BitConverter.ToString(d)}");
+                        Log.Debug($"[AirPods] advertisement: model=0x{key} rssi={args.RawSignalStrengthInDBm} raw={BitConverter.ToString(d)}");
 
                 bool flip = (d[5] & 0x20) == 0;
                 int a = d[6] >> 4, b = d[6] & 0x0F;
@@ -225,7 +225,7 @@ internal static class AirPods
             if (!_pairedLogged || nameChanged)
             {
                 _pairedLogged = true;
-                Log.W(found is null ? "[AirPods] no paired AirPods"
+                Log.Debug(found is null ? "[AirPods] no paired AirPods"
                                     : $"[AirPods] paired: {found.Value.Item1}, connected={found.Value.Item2}");
             }
         }
