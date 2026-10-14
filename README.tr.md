@@ -10,8 +10,14 @@ cihazlarla doğrudan USB HID ve Bluetooth LE üzerinden konuşur.
 
 - **Tepsi simgesi:** Kulaklığın pil yüzdesi, küçük boyutta bile okunacak piksel rakamlarla.
   Bir cihaz şarj oluyorsa simge, yüzde ile şarj olan cihazın yeşil simgesi arasında döner.
+- **Her cihaz için ayrı tepsi simgesi:** sağ tık → **Tepside göster** menüsünden istediğin cihazları işaretle.
+  İşaretlenen her cihaz kendi yüzdesiyle ayrı bir simge alır (HWiNFO'daki ayrı sensörler gibi);
+  cihaz adı için simgenin üzerine gel. Hepsinin işaretini kaldırırsan tek kulaklık simgesine dönülür.
+  Windows 11'de yeni tepsi simgeleri `^` taşma alanında başlar: görev çubuğuna sürükle.
 - **Pil paneli:** Simgeye tıklayınca, tıklanan yerin üstünde açılan koyu panel.
-  - *Cihazlarım:* bağlı cihazların adı, bağlantı türü, yüzdesi ve pil çubuğu
+  - *Cihazlarım:* bağlı cihazların adı, bağlantı türü, yüzdesi ve pil çubuğu.
+    Bilgi vermeyen cihazlar (cihazı kapalıyken takılı duran alıcı) listelenmez; tek istisna kulaklığı
+    olmadan takılı HS80 alıcısıdır, bunu belirtir. Uykuya geçen cihaz son değerini göstermeye devam eder.
   - *Yakındakiler:* çevredeki Bluetooth LE cihazları; AirPods/Beats için sol, sağ ve kutu pili
   - *Fare ayrıntıları:* ATK/VXE fareler için etkin DPI kademesi ve tarama (polling) hızı da gösterilir
 - **Düşük pil bildirimi:** %10 ve %5'in altında Windows bildirimi (cihaz başına bir kez).

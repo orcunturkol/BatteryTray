@@ -23,9 +23,11 @@ internal static class Notes
 /// Present = false: the device isn't on this PC and isn't shown in the panel.
 /// Parts: for devices with more than one battery (AirPods: left, right, case). Drawn as separate columns.
 /// Details: optional extra line under the note, e.g. a mouse's "1600 DPI (2/4) · 1000 Hz".
+/// Standby: no reading, but the receiver is confirmed present and the device itself isn't connected to it.
+/// Listed with its note instead of being hidden like other devices without a reading.
 internal sealed record DeviceStatus(DeviceKind Kind, string Name, int? Percent, bool Charging, string Note,
     bool Wired = false, bool Present = true, IReadOnlyList<BatteryPart>? Parts = null, bool Approx = false,
-    string? Details = null);
+    string? Details = null, bool Standby = false);
 
 /// Approx: the value is approximate (AirPods advertise in 10 % steps), shown with "~" in the panel.
 internal sealed record BatteryPart(string Label, int? Percent, bool Charging, bool Approx = false);

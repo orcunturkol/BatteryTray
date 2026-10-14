@@ -184,7 +184,7 @@ internal sealed class PopupForm : Form
         int y = D(Header);
         if (Rows.Count == 0)
         {
-            TextRenderer.DrawText(g, _tab == 1 ? L.T("Yakında Bluetooth cihazı bulunamadı", "No Bluetooth devices nearby") : L.T("Cihaz yok", "No devices"), noteFont,
+            TextRenderer.DrawText(g, _tab == 1 ? L.T("Yakında Bluetooth cihazı bulunamadı", "No Bluetooth devices nearby") : L.T("Bağlı cihaz yok", "No connected devices"), noteFont,
                 new Rectangle(D(10), y, Width - D(20), D(RowH - 8)), Text2,
                 TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
         }
@@ -209,7 +209,9 @@ internal sealed class PopupForm : Form
 
             // Name and note
             int tx = row.X + D(50);
-            int textW = row.Width - D(50) - (it.Parts is { Count: > 0 } ? D(12) : D(90));
+            // The right side holds the percentage and bar; rows without a percentage (just a "—") leave more room for text
+            int reserved = it.Parts is { Count: > 0 } ? 12 : it.Percent is null && !it.Wired ? 36 : 90;
+            int textW = row.Width - D(50) - D(reserved);
             TextRenderer.DrawText(g, it.Name, nameFont, new Rectangle(tx, row.Y + D(8), textW, D(22)), Text1,
                 TextFormatFlags.Left | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPadding);
             string note = it.Note;   // the format is defined in one place by Notes.Make
