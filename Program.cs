@@ -320,6 +320,7 @@ internal sealed class TrayApp : ApplicationContext
     private DeviceStatus _keyboard = new(DeviceKind.Keyboard, L.T("Klavye", "Keyboard"), null, false, "...", Present: false);
     private DeviceStatus _asusKeyboard = new(DeviceKind.Keyboard, L.T("ASUS klavye", "ASUS keyboard"), null, false, "...", Present: false);
     private IReadOnlyList<DeviceStatus> _logitech = Array.Empty<DeviceStatus>();
+    private IReadOnlyList<DeviceStatus> _xbox = Array.Empty<DeviceStatus>();
     private readonly System.Windows.Forms.Timer _timer;
     private Icon? _currentIcon;
     private bool _busy;
@@ -386,6 +387,7 @@ internal sealed class TrayApp : ApplicationContext
             var info = await Task.Run(() => _device.Read());
             UpdateHeadsetStatus(info);
             UpdateTrayIcon(info);
+            _xbox = XboxController.Read();   // cheap, so controllers appear/disappear within seconds too
             SyncPinned();
             if (_popup.Visible) _popup.SetItems(Items);
         }
@@ -502,6 +504,7 @@ internal sealed class TrayApp : ApplicationContext
         yield return ("asus-keyboard", _asusKeyboard);
         if (_airpods is not null) yield return ("airpods", _airpods);
         foreach (var d in _logitech) yield return ("logitech:" + d.Name, d);
+        foreach (var d in _xbox) yield return ("xbox:" + d.Name, d);
     }
 
     /// What the panel lists: only devices that report something (see DeviceFilter).
@@ -712,6 +715,7 @@ internal sealed class TrayApp : ApplicationContext
 
             (_mouse, _atkMouse, _keyboard, _asusKeyboard, _logitech) = await others;
             _asusKeyboard = KeepAsleepReading(_asusKeyboard);
+            _xbox = XboxController.Read();
             try { _airpods = await AirPods.ReadAsync(); } catch (Exception ex) { Log.W("airpods: " + ex.Message); }
             CheckLowBattery();
             SyncPinned();
@@ -950,6 +954,25 @@ internal sealed class TrayApp : ApplicationContext
                 int split = body.Y + (int)(h * 0.42);
                 g.FillRectangle(b, body.X + t, split, body.Width - 2 * t, t);       // horizontal split
                 g.FillRectangle(b, midX - t / 2, body.Y + t, t, split - body.Y - t); // vertical split
+                break;
+            }
+
+            case DeviceKind.Gamepad:
+            {
+                // Controller: rounded body, d-pad cross on the left, two buttons on the right
+                int w = S, h = (int)(S * 0.62);
+                var body = new Rectangle(0, (S - h) / 2, w, h);
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+                using (var pen = new Pen(c, t + 0.5f))
+                using (var p = RoundedPath(body, h / 2f))
+                    g.DrawPath(pen, p);
+                g.SmoothingMode = SmoothingMode.None;
+                int arm = Math.Max(1, S / 8), cx = body.X + w / 4, cy = body.Y + h / 2;
+                g.FillRectangle(b, cx - arm, cy - t / 2, 2 * arm + 1, t);
+                g.FillRectangle(b, cx - t / 2, cy - arm, t, 2 * arm + 1);
+                int dot = Math.Max(1, S / 8);
+                g.FillRectangle(b, body.Right - w / 4 - dot, cy - dot, dot, dot);
+                g.FillRectangle(b, body.Right - w / 4 + 1, cy, dot, dot);
                 break;
             }
 
