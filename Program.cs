@@ -409,29 +409,6 @@ internal sealed class TrayApp : ApplicationContext
         pin.DropDownOpening += (_, _) => FillPinMenu(pin);
         menu.Items.Add(pin);
 
-        // "Turn off <controller>" items, shown only while an Xbox controller is connected (filled when the menu opens)
-        var xboxItems = new List<ToolStripItem>();
-        menu.Opening += (_, _) =>
-        {
-            foreach (var old in xboxItems) menu.Items.Remove(old);
-            xboxItems.Clear();
-            int at = menu.Items.IndexOf(pin) + 1;
-            for (uint i = 0; i < 4; i++)
-            {
-                string name = XboxController.NameOf(i);
-                if (_xbox.All(d => d.Name != name)) continue;
-                uint slot = i;
-                var item = new ToolStripMenuItem(L.T($"{name} kapat", $"Turn off {name}"));
-                item.Click += (_, _) =>
-                {
-                    if (!XboxController.PowerOff(slot))
-                        BalloonHost.ShowBalloonTip(3000, name, L.T("Kapatılamadı", "Could not turn it off"), ToolTipIcon.Warning);
-                };
-                menu.Items.Insert(at++, item);
-                xboxItems.Add(item);
-            }
-        };
-
         menu.Items.Add(L.T("Tanılama", "Diagnostics"), null, async (_, _) =>
         {
             // Writes every connected HID device and the responses of supported brands to the log, then opens it.
