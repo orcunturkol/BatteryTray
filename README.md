@@ -14,6 +14,7 @@ the devices directly over USB HID and Bluetooth LE.
 - **Battery panel:** click the icon to open a dark panel right above it.
   - *My devices:* name, connection type, percentage and a battery bar for each connected device
   - *Nearby:* Bluetooth LE devices around you; left, right and case battery for AirPods/Beats
+  - *Mouse details:* ATK/VXE mice also show the active DPI stage and the polling rate
 - **Low battery alerts:** Windows notification below 10 % and 5 % (once per device).
 - **Start with Windows:** toggle from the right-click menu, no admin rights required.
 - **English / Turkish UI:** English by default; switch to Turkish (or follow the Windows
@@ -25,6 +26,7 @@ the devices directly over USB HID and Bluetooth LE.
 |---|---|---|
 | Headset | Corsair HS80 MAX, Virtuoso MAX, Void Wireless V2 | 2.4 GHz receiver or USB cable |
 | Mouse | ASUS ROG wireless mice (Gladius III, Harpe, Keris, Chakram, Spatha …) | Receiver or USB cable |
+| Mouse | ATK VXE Dragonfly R1 series (R1 Pro Max, R1 SE+ …) | *Experimental.* Receiver or USB cable; battery, active DPI and polling rate. DPI / polling rate are only shown when the mouse's settings can be read and verified, see below |
 | Keyboard | Keychron K2 Max | **Requires patched firmware**, see [`firmware/keychron-k2-max`](firmware/keychron-k2-max) |
 | Keyboard | ASUS ROG wireless keyboards: ROG Falchion, and keyboards on the Omni Receiver (e.g. Strix Scope II 96 Wireless) | Receiver or USB cable; other ROG keyboards untested |
 | Earbuds | AirPods, AirPods Pro, Beats | From Bluetooth LE advertisements, 10 % steps |
@@ -32,6 +34,12 @@ the devices directly over USB HID and Bluetooth LE.
 
 Brands not listed (Razer, SteelSeries, HyperX …) each use their own protocol and
 won't show up yet. Contributions welcome.
+
+**ATK / VXE mice:** the battery query is the one other projects have verified on real hardware (VXE R1 Pro Max).
+The mouse stores every setting together with a checksum, so BatteryTray only shows DPI and polling rate when the
+values read back valid; on a model whose memory layout differs they are simply left out rather than guessed.
+If yours shows a battery but no DPI / polling rate, run **Diagnostics** and attach the log (it contains a raw,
+read-only dump of the mouse's settings memory) to an issue. BatteryTray never writes to the mouse.
 
 ## Installation
 
@@ -76,8 +84,11 @@ Protocols were learned from these open-source projects:
 - [k10he-battery-firmware](https://github.com/OutersGIT/k10he-battery-firmware) — Keychron 2.4 GHz battery patch
 - [OpenPods](https://github.com/adolfintel/OpenPods) — AirPods Bluetooth LE advertisement format
 - [Solaar](https://github.com/pwr-Solaar/Solaar) — Logitech HID++ battery features
+- [HaloBattery](https://github.com/HeyOkay/HaloBattery) — VXE R1 Pro Max battery query and USB IDs
+- [python-pulsar-mouse-tool](https://github.com/andrewrabert/python-pulsar-mouse-tool) — Compx frame format and settings memory map (DPI, polling rate)
+- [OpenMouse](https://github.com/OpenMouse-Project/mouse-protocol) — ATK/VXE protocol notes used as a cross-check
 
 ## License
 
 [GPL-3.0](LICENSE). The Keychron firmware patch is a QMK derivative and is GPL-2.0-or-later.
-This project is not affiliated with Corsair, ASUS, Keychron, Logitech, Apple or SteelSeries.
+This project is not affiliated with Corsair, ASUS, Keychron, Logitech, Apple, ATK, VXE or SteelSeries.

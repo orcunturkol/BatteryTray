@@ -21,7 +21,7 @@ internal sealed class PopupForm : Form
     public DateTime LastHidden { get; private set; }
 
     // Layout sizes at 100 % scaling (96 DPI); D() scales them to the display's DPI
-    private const int W = 320, Header = 52, RowH = 62, PartsRowH = 118, Footer = 14;
+    private const int W = 320, Header = 52, RowH = 62, DetailsRowH = 80, PartsRowH = 118, Footer = 14;
 
     private float _k = 1f;
     private int D(int v) => (int)Math.Round(v * _k);
@@ -29,8 +29,10 @@ internal sealed class PopupForm : Form
     /// Font size given in points at 96 DPI, converted to pixels and scaled, so text and layout scale together
     private Font F(string family, float pt) => new(family, pt * 96f / 72f * _k, GraphicsUnit.Pixel);
 
-    // Devices with more than one battery (AirPods) get a taller row with columns
-    private int RowHeight(DeviceStatus d) => D(d.Parts is { Count: > 0 } ? PartsRowH : RowH);
+    // Devices with more than one battery (AirPods) get a taller row with columns;
+    // devices with extra details (a mouse's DPI / polling rate) get one more text line
+    private int RowHeight(DeviceStatus d) =>
+        D(d.Parts is { Count: > 0 } ? PartsRowH : d.Details is { Length: > 0 } ? DetailsRowH : RowH);
 
     private static readonly Color Bg = Color.FromArgb(32, 32, 32);
     private static readonly Color RowBg = Color.FromArgb(43, 43, 43);
@@ -213,6 +215,9 @@ internal sealed class PopupForm : Form
             string note = it.Note;   // the format is defined in one place by Notes.Make
             TextRenderer.DrawText(g, note, noteFont, new Rectangle(tx, row.Y + D(31), textW, D(18)), Text2,
                 TextFormatFlags.Left | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPadding);
+            if (it.Details is { Length: > 0 } details)
+                TextRenderer.DrawText(g, details, noteFont, new Rectangle(tx, row.Y + D(50), row.Width - D(50) - D(12), D(18)), Text2,
+                    TextFormatFlags.Left | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPadding);
 
             // Right side: percentage + bar
             int rx = row.Right - D(80);
@@ -275,7 +280,7 @@ internal sealed class PopupForm : Form
             else if (it.Wired)
             {
                 // Cable mode: a horizontal green plug instead of a percentage
-                DrawPlug(g, row.Right - D(14), row.Y + row.Height / 2, Color.FromArgb(60, 200, 90), _k);
+                DrawPlug(g, row.Right - D(14), row.Y + D(RowH - 8) / 2, Color.FromArgb(60, 200, 90), _k);   // centered on the top part
             }
             else
             {

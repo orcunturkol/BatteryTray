@@ -285,6 +285,7 @@ internal sealed class TrayApp : ApplicationContext
     // Nothing is shown at start; each device is added to the panel with its name once found
     private DeviceStatus _headset = new(DeviceKind.Headset, L.T("Kulaklık", "Headset"), null, false, "...", Present: false);
     private DeviceStatus _mouse = new(DeviceKind.Mouse, L.T("Fare", "Mouse"), null, false, "...", Present: false);
+    private DeviceStatus _atkMouse = new(DeviceKind.Mouse, L.T("ATK fare", "ATK mouse"), null, false, "...", Present: false);
     private DeviceStatus _keyboard = new(DeviceKind.Keyboard, L.T("Klavye", "Keyboard"), null, false, "...", Present: false);
     private DeviceStatus _asusKeyboard = new(DeviceKind.Keyboard, L.T("ASUS klavye", "ASUS keyboard"), null, false, "...", Present: false);
     private IReadOnlyList<DeviceStatus> _logitech = Array.Empty<DeviceStatus>();
@@ -408,7 +409,7 @@ internal sealed class TrayApp : ApplicationContext
     private DeviceStatus? _airpods;   // only listed once its advertisement has been seen
 
     private IReadOnlyList<DeviceStatus> Items =>
-        new[] { _headset, _mouse, _keyboard, _asusKeyboard, _airpods }.Concat(_logitech)
+        new[] { _headset, _mouse, _atkMouse, _keyboard, _asusKeyboard, _airpods }.Concat(_logitech)
             .Where(d => d is { Present: true })
             .Select(d => d!)
             .ToList();
@@ -434,20 +435,21 @@ internal sealed class TrayApp : ApplicationContext
             // Mouse and keyboards are read in the background; errors there never affect the headset
             var others = Task.Run(() =>
             {
-                DeviceStatus m, k, ak;
+                DeviceStatus m, am, k, ak;
                 IReadOnlyList<DeviceStatus> lg;
                 try { m = RogMouse.Read(); } catch (Exception ex) { Log.W("mouse: " + ex); m = _mouse with { Percent = null, Note = L.T("Okunamadı", "Read failed") }; }
+                try { am = AtkMouse.Read(); } catch (Exception ex) { Log.W("ATK mouse: " + ex); am = _atkMouse with { Percent = null, Details = null, Note = L.T("Okunamadı", "Read failed") }; }
                 try { k = Keychron.Read(); } catch (Exception ex) { Log.W("keyboard: " + ex); k = _keyboard with { Percent = null, Note = L.T("Okunamadı", "Read failed") }; }
                 try { ak = AsusKeyboard.Read(); } catch (Exception ex) { Log.W("ASUS keyboard: " + ex); ak = _asusKeyboard with { Percent = null, Note = L.T("Okunamadı", "Read failed") }; }
                 try { lg = Logitech.Read(); } catch (Exception ex) { Log.W("Logitech: " + ex); lg = _logitech; }
-                return (m, k, ak, lg);
+                return (m, am, k, ak, lg);
             });
 
             var info = await Task.Run(() => _device.Read());
             UpdateHeadsetStatus(info);
             UpdateTrayIcon(info);   // update the icon as soon as the headset is read, don't wait for the others
 
-            (_mouse, _keyboard, _asusKeyboard, _logitech) = await others;
+            (_mouse, _atkMouse, _keyboard, _asusKeyboard, _logitech) = await others;
             try { _airpods = await AirPods.ReadAsync(); } catch (Exception ex) { Log.W("airpods: " + ex.Message); }
             CheckLowBattery();
             if (_popup.Visible) _popup.SetItems(Items);
@@ -785,7 +787,7 @@ internal sealed class TrayApp : ApplicationContext
         ApplyBitmap(bmp);
     }
 
-    /// Diagnostics: dump of all HID devices + brand-specific probes (currently ASUS).
+    /// Diagnostics: dump of all HID devices + brand-specific probes (ASUS, ATK/VXE).
     private static void RunDiagnostics()
     {
         Log.W("========== Diagnostics started ==========");
@@ -816,6 +818,7 @@ internal sealed class TrayApp : ApplicationContext
         catch (Exception ex) { Log.W("[HID] dump error: " + ex.Message); }
 
         try { AsusKeyboard.Diagnose(); } catch (Exception ex) { Log.W("[ASUS diag] " + ex); }
+        try { AtkMouse.Diagnose(); } catch (Exception ex) { Log.W("[ATK diag] " + ex); }
         Log.W("========== Diagnostics finished ==========");
     }
 
