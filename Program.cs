@@ -49,6 +49,11 @@ internal static class Log
         }
         catch { }
     }
+    // Routine device traces (every scan, every read) are written only for a while after "Diagnostics" is used,
+    // so the log stays small. W is for events worth keeping: errors, connect/disconnect, alerts.
+    private static DateTime _verboseUntil;
+    public static void StartVerbose(TimeSpan span) => _verboseUntil = DateTime.Now + span;
+    public static void Debug(string msg) { if (DateTime.Now < _verboseUntil) W(msg); }
     public static string Hex(byte[] b, int n = 16) => BitConverter.ToString(b, 0, Math.Min(n, b.Length));
 }
 
@@ -123,7 +128,7 @@ internal sealed class Hs80Device : IDisposable
         {
           try
           {
-            Log.W($"trying PID=0x{dev.ProductID:X4} out={dev.GetMaxOutputReportLength()} in={dev.GetMaxInputReportLength()} {dev.DevicePath}");
+            Log.Debug($"trying PID=0x{dev.ProductID:X4} out={dev.GetMaxOutputReportLength()} in={dev.GetMaxInputReportLength()} {dev.DevicePath}");
             if (!dev.TryOpen(out var s)) { LastError = L.T("arayüz açılamadı", "could not open interface"); Log.W("  could not open"); continue; }
             s.ReadTimeout = 400;
             s.WriteTimeout = 400;
@@ -137,19 +142,19 @@ internal sealed class Hs80Device : IDisposable
             try
             {
                 var ids = dev.GetReportDescriptor().OutputReports.Select(r => r.ReportID).ToList();
-                Log.W("  output report IDs: " + string.Join(",", ids.Select(i => "0x" + i.ToString("X2"))));
+                Log.Debug("  output report IDs: " + string.Join(",", ids.Select(i => "0x" + i.ToString("X2"))));
                 _reportId = ids.Count == 0 || ids.Contains(Hs80Protocol.ReportId) ? Hs80Protocol.ReportId : ids[0];
             }
-            catch (Exception ex) { Log.W("  could not read descriptor: " + ex.Message); }
+            catch (Exception ex) { Log.Debug("  could not read descriptor: " + ex.Message); }
 
             // Try the headset target (0x09) first; when connected directly by cable
             // the headset itself may answer as the root (0x08).
             foreach (var route in new[] { Hs80Protocol.RouteHeadset, Hs80Protocol.RouteRoot })
             {
                 _route = route;
-                Log.W($"  trying route 0x{route:X2}");
+                Log.Debug($"  trying route 0x{route:X2}");
                 if (route == Hs80Protocol.RouteHeadset) Wake();
-                if (ReadBatteryRaw() is not null) { Log.W("  OK"); LastError = null; ReceiverOnly = false; return true; }
+                if (ReadBatteryRaw() is not null) { Log.Debug("  OK"); LastError = null; ReceiverOnly = false; return true; }
             }
             LastError = L.T("kulaklıktan geçerli cevap gelmedi", "no valid response from headset");
             // The receiver (not the headset's own USB interface) still answers on its own route when the headset is off
@@ -232,13 +237,13 @@ internal sealed class Hs80Device : IDisposable
         {
             int old = _stream!.ReadTimeout;
             _stream.ReadTimeout = 50;
-            try { for (int i = 0; i < 10; i++) { var r = _stream.Read(); if (_discovering) Log.W($"    < (wake) {Log.Hex(r)}"); } }
+            try { for (int i = 0; i < 10; i++) { var r = _stream.Read(); if (_discovering) Log.Debug($"    < (wake) {Log.Hex(r)}"); } }
             catch { }
             _stream.ReadTimeout = old;
         }
         try
         {
-            if (_discovering) Log.W("    wake: receiver 0x13/0x12, headset 0x12");
+            if (_discovering) Log.Debug("    wake: receiver 0x13/0x12, headset 0x12");
             Send(Hs80Protocol.RouteRoot, 0x13);
             Send(Hs80Protocol.RouteRoot, 0x12);
             Drain();
@@ -267,7 +272,7 @@ internal sealed class Hs80Device : IDisposable
         req[1] = _route;
         req[2] = Hs80Protocol.CmdGet;
         req[3] = prop;
-        if (_discovering) Log.W($"    > {Log.Hex(req, 8)}");
+        if (_discovering) Log.Debug($"    > {Log.Hex(req, 8)}");
         _stream.Write(req);
 
         // The headset may send unsolicited event packets in between,
@@ -277,8 +282,8 @@ internal sealed class Hs80Device : IDisposable
             byte[] resp;
             try { resp = _stream.Read(); }
             catch (Exception ex) when (ex is TimeoutException || (ex is IOException && ex.Message.Contains("after some time")))
-            { if (_discovering) Log.W("    < (timeout)"); return null; }
-            if (_discovering) Log.W($"    < {Log.Hex(resp)}");
+            { if (_discovering) Log.Debug("    < (timeout)"); return null; }
+            if (_discovering) Log.Debug($"    < {Log.Hex(resp)}");
 
             // The report ID is sometimes at the start and sometimes not: try both offsets.
             foreach (int off in new[] { 0, -1 })
@@ -361,7 +366,31 @@ internal sealed class TrayApp : ApplicationContext
         _timer = new System.Windows.Forms.Timer { Interval = 30_000 };
         _timer.Tick += async (_, _) => await RefreshAsync();
         _timer.Start();
+
+        // The full refresh (all devices, Bluetooth) runs every 30 s; the headset alone is cheap to query, so it is polled
+        // more often to notice it being switched on/off or the receiver being unplugged within seconds.
+        _headsetPoll = new System.Windows.Forms.Timer { Interval = 5_000 };
+        _headsetPoll.Tick += async (_, _) => await PollHeadsetAsync();
+        _headsetPoll.Start();
         _ = RefreshAsync();
+    }
+
+    private readonly System.Windows.Forms.Timer _headsetPoll;
+
+    private async Task PollHeadsetAsync()
+    {
+        if (_busy) return;   // a full refresh is already reading the headset
+        _busy = true;
+        try
+        {
+            var info = await Task.Run(() => _device.Read());
+            UpdateHeadsetStatus(info);
+            UpdateTrayIcon(info);
+            SyncPinned();
+            if (_popup.Visible) _popup.SetItems(Items);
+        }
+        catch (Exception ex) { Log.W("headset poll error: " + ex.Message); }
+        finally { _busy = false; }
     }
 
     /// Right-click menu. Rebuilt from scratch when the language changes.
@@ -382,6 +411,7 @@ internal sealed class TrayApp : ApplicationContext
         {
             // Writes every connected HID device and the responses of supported brands to the log, then opens it.
             // This log is all that's needed to add a new device or troubleshoot a problem.
+            Log.StartVerbose(TimeSpan.FromMinutes(2));   // also capture the live device traces for a couple of minutes
             await Task.Run(RunDiagnostics);
             OpenLog();
         });
@@ -494,6 +524,7 @@ internal sealed class TrayApp : ApplicationContext
         {
             var pin = _pinned[i];
             online.TryGetValue(pin.Id, out var st);
+            bool standby = st is { Standby: true };   // receiver plugged in but its device is off: nothing worth a tray icon
 
             // Remember the name the device reports, for the tooltip while it is offline
             if (st is not null && st.Name != pin.Name)
@@ -504,14 +535,15 @@ internal sealed class TrayApp : ApplicationContext
 
             if (_pinIcons.TryGetValue(pin.Id, out var icon))
             {
-                RenderPinned(icon, pin.Name, st);
+                RenderPinned(icon, pin.Name, TrayPins.ColorOf(pin, i), st);
+                icon.Tray.Visible = !standby;
                 continue;
             }
             icon = new PinnedIcon(new NotifyIcon { ContextMenuStrip = _tray.ContextMenuStrip });
             icon.Tray.MouseClick += OnTrayClick;
             _pinIcons[pin.Id] = icon;
-            RenderPinned(icon, pin.Name, st);
-            icon.Tray.Visible = true;   // only once it has an image
+            RenderPinned(icon, pin.Name, TrayPins.ColorOf(pin, i), st);
+            icon.Tray.Visible = !standby;   // only once it has an image
         }
         if (namesChanged) TrayPins.Save(_pinned);
 
@@ -525,22 +557,28 @@ internal sealed class TrayApp : ApplicationContext
             icon.Current?.Dispose();
         }
 
-        _tray.Visible = _pinned.Count == 0;
-
-        // A charging pinned device alternates between its percentage and its glyph
+        // The headset icon stands in whenever no pinned icon is visible, so the app always has a tray presence
+        _tray.Visible = _pinned.All(p => _pinIcons.TryGetValue(p.Id, out var pi) is false || !pi.Tray.Visible);
+        // A charging pinned device alternates between its percentage and its glyph; a critically low one (<= 5 %)
+        // flashes between its own color and red. Low-battery flashing is faster, to catch the eye.
         bool anyCharging = _pinned.Any(p => online.TryGetValue(p.Id, out var s) && s.Charging);
-        if (anyCharging) { if (!_pinBlink.Enabled) _pinBlink.Start(); }
+        bool anyCritical = _pinned.Any(p => online.TryGetValue(p.Id, out var s) && IsCritical(s));
+        _pinBlink.Interval = anyCritical ? 700 : 1500;
+        if (anyCharging || anyCritical) { if (!_pinBlink.Enabled) _pinBlink.Start(); }
         else if (_pinBlink.Enabled) { _pinBlink.Stop(); _pinBlinkOn = false; }
     }
 
+    private static bool IsCritical(DeviceStatus s) => s.Percent is <= 5 && !s.Charging;
+
     /// d = null: the device is offline (a dash is drawn). Skips the redraw when nothing visible changed.
-    private void RenderPinned(PinnedIcon pin, string name, DeviceStatus? d)
+    private void RenderPinned(PinnedIcon pin, string name, Color textColor, DeviceStatus? d)
     {
         int S = Math.Max(SystemInformation.SmallIconSize.Width, 16);
         bool onCable = d is { Percent: null, Wired: true };   // plugged in, nothing to show as a percentage
         bool glyph = d is not null && (onCable || (d.Charging && _pinBlinkOn));
+        bool critical = d is not null && IsCritical(d);
 
-        string key = $"{S}|{name}|{d?.Percent}|{d?.Charging}|{d?.Kind}|{d?.Note}|{d is null}|{glyph}";
+        string key = $"{S}|{name}|{textColor.ToArgb()}|{d?.Percent}|{d?.Charging}|{d?.Kind}|{d?.Note}|{d is null}|{glyph}|{critical && _pinBlinkOn}";
         if (key == pin.LastKey) return;
         pin.LastKey = key;
 
@@ -554,7 +592,7 @@ internal sealed class TrayApp : ApplicationContext
 
                 if (glyph) DrawDeviceGlyph(g, S, d!.Kind, Green);
                 else if (d?.Percent is int p)
-                    DrawNumber(g, S, p < 10 && !d.Charging ? Color.FromArgb(255, 72, 72) : Color.White, Math.Clamp(p, 0, 100));
+                    DrawNumber(g, S, (critical && _pinBlinkOn) || (p < 10 && !critical && !d.Charging) ? Color.FromArgb(255, 72, 72) : textColor, Math.Clamp(p, 0, 100));
                 else DrawDash(g, S, Color.Gray);
             }
             var icon = ToIcon(bmp);
@@ -584,10 +622,38 @@ internal sealed class TrayApp : ApplicationContext
             item.Click += (_, _) => TogglePinned(id, name);
             menu.DropDownItems.Add(item);
         }
+        // Text color per pinned device, to tell the icons apart
+        if (_pinned.Count > 0)
+        {
+            menu.DropDownItems.Add(new ToolStripSeparator());
+            for (int i = 0; i < _pinned.Count; i++)
+            {
+                var pin = _pinned[i];
+                var current = TrayPins.ColorOf(pin, i).ToArgb();
+                var colorMenu = new ToolStripMenuItem(pin.Name + " – " + L.T("yazı rengi", "text color"));
+                foreach (var (en, tr, value) in TrayPins.Palette)
+                {
+                    var c = value;
+                    var item = new ToolStripMenuItem(L.T(tr, en)) { Checked = c.ToArgb() == current, ForeColor = Color.Black, BackColor = c };
+                    item.Click += (_, _) => SetPinColor(pin.Id, c.ToArgb());
+                    colorMenu.DropDownItems.Add(item);
+                }
+                menu.DropDownItems.Add(colorMenu);
+            }
+        }
         menu.DropDownItems.Add(new ToolStripSeparator());
         menu.DropDownItems.Add(new ToolStripMenuItem(
             L.T("Hiçbiri seçili değilse tek kulaklık simgesi görünür", "With none checked, one headset icon is shown"))
             { Enabled = false });
+    }
+
+    private void SetPinColor(string id, int argb)
+    {
+        int i = _pinned.FindIndex(p => p.Id == id);
+        if (i < 0) return;
+        _pinned[i] = _pinned[i] with { Color = argb };
+        TrayPins.Save(_pinned);
+        SyncPinned();
     }
 
     private void TogglePinned(string id, string name)
@@ -607,6 +673,18 @@ internal sealed class TrayApp : ApplicationContext
         _popup.SetItems(Items);
         _popup.ShowAt(Cursor.Position);
         _ = RefreshAsync();
+    }
+
+    // An ASUS keyboard that fell asleep stops answering; keep showing its last reading, marked with its time
+    private (int Pct, DateTime At)? _asusKbLast;
+
+    private DeviceStatus KeepAsleepReading(DeviceStatus d)
+    {
+        if (d.Percent is int p) { _asusKbLast = (p, DateTime.Now); return d; }
+        bool silent = d.Note == L.T("Uykuda / kapalı", "Asleep / off") || d.Note == L.T("Cevap yok", "No response");
+        if (d.Present && silent && _asusKbLast is { } last)
+            return d with { Percent = last.Pct, Charging = false, Note = L.T("Uykuda · son ", "Asleep · last ") + $"{last.At:HH:mm}" };
+        return d;
     }
 
     private async Task RefreshAsync()
@@ -633,6 +711,7 @@ internal sealed class TrayApp : ApplicationContext
             UpdateTrayIcon(info);   // update the icon as soon as the headset is read, don't wait for the others
 
             (_mouse, _atkMouse, _keyboard, _asusKeyboard, _logitech) = await others;
+            _asusKeyboard = KeepAsleepReading(_asusKeyboard);
             try { _airpods = await AirPods.ReadAsync(); } catch (Exception ex) { Log.W("airpods: " + ex.Message); }
             CheckLowBattery();
             SyncPinned();
@@ -1030,6 +1109,7 @@ internal sealed class TrayApp : ApplicationContext
         if (disposing)
         {
             _timer.Dispose();
+            _headsetPoll.Dispose();
             _popup.Dispose();
             AirPods.Stop();
             _blink.Dispose();

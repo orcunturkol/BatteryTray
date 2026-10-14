@@ -85,7 +85,7 @@ internal static class RogMouse
         if (!_loggedOnce)
         {
             _loggedOnce = true;
-            foreach (var d in all) Log.W($"[ROG] PID=0x{d.ProductID:X4} {d.DevicePath}");
+            foreach (var d in all) Log.Debug($"[ROG] PID=0x{d.ProductID:X4} {d.DevicePath}");
         }
 
         DeviceStatus? last = null;
@@ -205,7 +205,6 @@ internal static class AsusKeyboard
         catch { return false; }
     }
 
-    private static bool _diagnosed;
 
     /// Diagnostics: logs ALL connected ASUS HID interfaces in detail and sends read-only battery
     /// queries to the vendor channels of devices that have a keyboard interface, logging the responses.
@@ -299,7 +298,7 @@ internal static class AsusKeyboard
 
     public static DeviceStatus Read()
     {
-        if (!_diagnosed) { _diagnosed = true; try { Diagnose(); } catch (Exception ex) { Log.W("[ASUS diag] error: " + ex); } }
+        // The ASUS probe dump only runs from the Diagnostics menu item, never on its own
         var all = DeviceList.Local.GetHidDevices(0x0B05).ToList();
 
         // ASUS devices that have a keyboard interface (by PID)
@@ -317,7 +316,7 @@ internal static class AsusKeyboard
         if (!_loggedOnce)
         {
             _loggedOnce = true;
-            foreach (var d in candidates) Log.W($"[ASUS keyboard] candidate PID=0x{d.ProductID:X4} {d.DevicePath}");
+            foreach (var d in candidates) Log.Debug($"[ASUS keyboard] candidate PID=0x{d.ProductID:X4} {d.DevicePath}");
         }
 
         DeviceStatus? last = null;
@@ -523,7 +522,7 @@ internal static class Keychron
                 if (!_wiredLogged)
                 {
                     _wiredLogged = true;
-                    Log.W($"[Keychron] cable mode PID=0x{dev.ProductID:X4}: {pct}%, charge={charge}, raw={Log.Hex(buf, 10)}");
+                    Log.Debug($"[Keychron] cable mode PID=0x{dev.ProductID:X4}: {pct}%, charge={charge}, raw={Log.Hex(buf, 10)}");
                 }
                 if (pct is <= 0 or > 100) return new(DeviceKind.Keyboard, Name, null, false, Notes.Cable + L.T(" · pil okunamadı", " · battery unreadable"));
                 // On the cable the percentage isn't reliable (charging voltage): show a plug icon instead
