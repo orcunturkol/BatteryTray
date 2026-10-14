@@ -27,6 +27,7 @@ internal static class Hs80Protocol
     public const byte RouteRoot = 0x08;
     public const byte RouteHeadset = 0x09;
     public const byte CmdGet = 0x02;
+    public const byte PropFirmware = 0x13;   // receiver firmware query (also part of the wake-up handshake)
     public const byte PropBattery = 0x0F;
     public const byte PropChargeState = 0x10;
 }
@@ -63,6 +64,8 @@ internal sealed class Hs80Device : IDisposable
     public string? Path { get; private set; }
     public string? ProductName { get; private set; }   // name the device reports over USB
     public bool Found { get; private set; }            // is a supported headset present on this PC
+    /// The receiver answers but the headset doesn't: the receiver is plugged in and the headset is off / out of range.
+    public bool ReceiverOnly { get; private set; }
 
     /// Finds Corsair's vendor (0xFF42) control interface. The PID is not checked,
     /// so both the dongle (0x0A97) and a headset connected by cable can be tried.
@@ -112,7 +115,9 @@ internal sealed class Hs80Device : IDisposable
             Log.W($"candidate interfaces: {candidates.Count}");
         }
         Found = candidates.Count > 0;
-        if (!Found) LastError = L.T("Bulunamadı", "Not found");
+        if (!Found) { LastError = L.T("Bulunamadı", "Not found"); ReceiverOnly = false; }
+
+        bool receiverAnswered = false;   // a receiver replied on its own route although the headset did not
 
         foreach (var dev in candidates)
         {
@@ -144,9 +149,11 @@ internal sealed class Hs80Device : IDisposable
                 _route = route;
                 Log.W($"  trying route 0x{route:X2}");
                 if (route == Hs80Protocol.RouteHeadset) Wake();
-                if (ReadBatteryRaw() is not null) { Log.W("  OK"); LastError = null; return true; }
+                if (ReadBatteryRaw() is not null) { Log.W("  OK"); LastError = null; ReceiverOnly = false; return true; }
             }
             LastError = L.T("kulaklıktan geçerli cevap gelmedi", "no valid response from headset");
+            // The receiver (not the headset's own USB interface) still answers on its own route when the headset is off
+            if (dev.ProductID == 0x0A97 && ReceiverResponds()) receiverAnswered = true;
           }
           catch (Exception ex)
           {
@@ -155,7 +162,26 @@ internal sealed class Hs80Device : IDisposable
           }
           Close();
         }
+
+        // Receiver answered but the headset didn't: the receiver is plugged in and the headset is off or out of range
+        if (receiverAnswered)
+        {
+            LastError = L.T("Alıcı takılı · kulaklık bağlı değil", "Receiver found · headset not connected");
+            if (!ReceiverOnly) Log.W("receiver answers, headset doesn't: headset not connected");
+        }
+        else if (ReceiverOnly) Log.W("receiver no longer answers on its own route");
+        ReceiverOnly = receiverAnswered;
         return false;
+    }
+
+    /// Asks the receiver itself (root route) for its firmware version. It answers even while the headset is off,
+    /// which tells "headset not connected" apart from "receiver not responding".
+    private bool ReceiverResponds()
+    {
+        var saved = _route;
+        _route = Hs80Protocol.RouteRoot;
+        try { return GetProperty(Hs80Protocol.PropFirmware) is not null; }
+        finally { _route = saved; }
     }
 
     public BatteryInfo? Read()
@@ -293,6 +319,19 @@ internal sealed class TrayApp : ApplicationContext
     private Icon? _currentIcon;
     private bool _busy;
 
+    // Devices pinned to the tray ("Show in tray"): one icon each. While none is pinned, the single headset icon above is used.
+    private sealed class PinnedIcon
+    {
+        public PinnedIcon(NotifyIcon tray) => Tray = tray;
+        public NotifyIcon Tray { get; }
+        public Icon? Current { get; set; }
+        public string LastKey { get; set; } = "";
+    }
+    private List<PinnedDevice> _pinned = TrayPins.Load();
+    private readonly Dictionary<string, PinnedIcon> _pinIcons = new();
+    private readonly System.Windows.Forms.Timer _pinBlink;
+    private bool _pinBlinkOn;
+
     // Battery icon state
     private readonly System.Windows.Forms.Timer _blink;
     private int _pct;
@@ -301,17 +340,23 @@ internal sealed class TrayApp : ApplicationContext
 
     public TrayApp()
     {
-        _tray = new NotifyIcon { ContextMenuStrip = BuildMenu(), Visible = true, Text = L.T("Cihazlar aranıyor...", "Looking for devices...") };
+        // The single headset icon is only shown while no device is pinned to the tray
+        _tray = new NotifyIcon { ContextMenuStrip = BuildMenu(), Visible = _pinned.Count == 0, Text = L.T("Cihazlar aranıyor...", "Looking for devices...") };
         SetIcon("?", Color.Gray);
         _tray.MouseClick += OnTrayClick;
         _popup.NearbyProvider = AirPods.Nearby;
         // While the panel is open, AirPods values show up within a second of opening the case lid
-        _popup.ItemsProvider = () => { _airpods = AirPods.Current() ?? _airpods; return Items; };
+        _popup.ItemsProvider = () => { _airpods = AirPods.Current() ?? _airpods; SyncPinned(); return Items; };
         AirPods.Start();   // scanning always runs for the Nearby tab
 
         // Timer that alternates between the battery icon and the charging device icon
         _blink = new System.Windows.Forms.Timer { Interval = 1500 };
         _blink.Tick += (_, _) => { _blinkOn = !_blinkOn; RenderBattery(); };
+
+        // Same for the pinned icons: a charging device alternates between its percentage and its glyph
+        _pinBlink = new System.Windows.Forms.Timer { Interval = 1500 };
+        _pinBlink.Tick += (_, _) => { _pinBlinkOn = !_pinBlinkOn; SyncPinned(); };
+        SyncPinned();   // pinned icons appear right away (with "–") instead of after the first read
 
         _timer = new System.Windows.Forms.Timer { Interval = 30_000 };
         _timer.Tick += async (_, _) => await RefreshAsync();
@@ -325,6 +370,14 @@ internal sealed class TrayApp : ApplicationContext
         var menu = new ContextMenuStrip();
         menu.Items.Add(L.T("Pil durumu", "Battery status"), null, (_, _) => { _popup.SetItems(Items); _popup.ShowAt(Cursor.Position); });
         menu.Items.Add(L.T("Yenile", "Refresh"), null, async (_, _) => await RefreshAsync());
+
+        // Pin devices to the tray: a checked device gets its own icon with its own percentage.
+        // The list is filled when the submenu opens, from what is online at that moment.
+        var pin = new ToolStripMenuItem(L.T("Tepside göster", "Show in tray"));
+        pin.DropDownItems.Add(new ToolStripMenuItem("..."));
+        pin.DropDownOpening += (_, _) => FillPinMenu(pin);
+        menu.Items.Add(pin);
+
         menu.Items.Add(L.T("Tanılama", "Diagnostics"), null, async (_, _) =>
         {
             // Writes every connected HID device and the responses of supported brands to the log, then opens it.
@@ -372,6 +425,7 @@ internal sealed class TrayApp : ApplicationContext
         L.Set(lang);
         // The old menu is the one being clicked right now, so it isn't disposed here
         _tray.ContextMenuStrip = BuildMenu();
+        foreach (var p in _pinIcons.Values) p.Tray.ContextMenuStrip = _tray.ContextMenuStrip;
         _popup.Invalidate();
         _ = RefreshAsync();   // regenerate device status texts in the new language
     }
@@ -397,7 +451,7 @@ internal sealed class TrayApp : ApplicationContext
 
             _warnedAt[d.Name] = level;
             Log.W($"low battery alert: {d.Name} {p}%");
-            _tray.ShowBalloonTip(10_000,
+            BalloonHost.ShowBalloonTip(10_000,
                 level == 5 ? L.T("Pil kritik seviyede", "Battery critical") : L.T("Pil azaldı", "Battery low"),
                 // Approximate readings (AirPods in 10 % steps, Logitech voltage/level) are marked with "~"
                 L.T($"{d.Name}: {(d.Approx || d.Kind == DeviceKind.Earbuds ? "~" : "")}%{p} kaldı. Şarj etmeyi ya da pili değiştirmeyi unutma.",
@@ -408,11 +462,140 @@ internal sealed class TrayApp : ApplicationContext
 
     private DeviceStatus? _airpods;   // only listed once its advertisement has been seen
 
-    private IReadOnlyList<DeviceStatus> Items =>
-        new[] { _headset, _mouse, _atkMouse, _keyboard, _asusKeyboard, _airpods }.Concat(_logitech)
-            .Where(d => d is { Present: true })
-            .Select(d => d!)
-            .ToList();
+    /// Every device slot with a stable id, which is what "Show in tray" remembers. Includes devices that are offline.
+    private IEnumerable<(string Id, DeviceStatus Status)> Slots()
+    {
+        yield return ("headset", _headset);
+        yield return ("mouse", _mouse);
+        yield return ("atk-mouse", _atkMouse);
+        yield return ("keyboard", _keyboard);
+        yield return ("asus-keyboard", _asusKeyboard);
+        if (_airpods is not null) yield return ("airpods", _airpods);
+        foreach (var d in _logitech) yield return ("logitech:" + d.Name, d);
+    }
+
+    /// What the panel lists: only devices that report something (see DeviceFilter).
+    private IReadOnlyList<DeviceStatus> Items => Slots().Select(s => s.Status).Where(DeviceFilter.IsOnline).ToList();
+
+    // ---- Pinned tray icons ------------------------------------------------------------------------------
+
+    /// Balloon notifications need a visible icon, and the headset icon is hidden while devices are pinned.
+    private NotifyIcon BalloonHost => _tray.Visible ? _tray : _pinIcons.Values.FirstOrDefault()?.Tray ?? _tray;
+
+    /// Makes the pinned icons match the pinned list and the latest readings: creates, updates and removes them.
+    private void SyncPinned()
+    {
+        var online = new Dictionary<string, DeviceStatus>();
+        foreach (var (id, st) in Slots())
+            if (DeviceFilter.IsOnline(st)) online.TryAdd(id, st);
+
+        bool namesChanged = false;
+        for (int i = 0; i < _pinned.Count; i++)
+        {
+            var pin = _pinned[i];
+            online.TryGetValue(pin.Id, out var st);
+
+            // Remember the name the device reports, for the tooltip while it is offline
+            if (st is not null && st.Name != pin.Name)
+            {
+                _pinned[i] = pin = pin with { Name = st.Name };
+                namesChanged = true;
+            }
+
+            if (_pinIcons.TryGetValue(pin.Id, out var icon))
+            {
+                RenderPinned(icon, pin.Name, st);
+                continue;
+            }
+            icon = new PinnedIcon(new NotifyIcon { ContextMenuStrip = _tray.ContextMenuStrip });
+            icon.Tray.MouseClick += OnTrayClick;
+            _pinIcons[pin.Id] = icon;
+            RenderPinned(icon, pin.Name, st);
+            icon.Tray.Visible = true;   // only once it has an image
+        }
+        if (namesChanged) TrayPins.Save(_pinned);
+
+        // Icons of devices that were unpinned
+        foreach (var id in _pinIcons.Keys.Where(k => _pinned.All(p => p.Id != k)).ToList())
+        {
+            var icon = _pinIcons[id];
+            _pinIcons.Remove(id);
+            icon.Tray.Visible = false;
+            icon.Tray.Dispose();
+            icon.Current?.Dispose();
+        }
+
+        _tray.Visible = _pinned.Count == 0;
+
+        // A charging pinned device alternates between its percentage and its glyph
+        bool anyCharging = _pinned.Any(p => online.TryGetValue(p.Id, out var s) && s.Charging);
+        if (anyCharging) { if (!_pinBlink.Enabled) _pinBlink.Start(); }
+        else if (_pinBlink.Enabled) { _pinBlink.Stop(); _pinBlinkOn = false; }
+    }
+
+    /// d = null: the device is offline (a dash is drawn). Skips the redraw when nothing visible changed.
+    private void RenderPinned(PinnedIcon pin, string name, DeviceStatus? d)
+    {
+        int S = Math.Max(SystemInformation.SmallIconSize.Width, 16);
+        bool onCable = d is { Percent: null, Wired: true };   // plugged in, nothing to show as a percentage
+        bool glyph = d is not null && (onCable || (d.Charging && _pinBlinkOn));
+
+        string key = $"{S}|{name}|{d?.Percent}|{d?.Charging}|{d?.Kind}|{d?.Note}|{d is null}|{glyph}";
+        if (key == pin.LastKey) return;
+        pin.LastKey = key;
+
+        using (var bmp = new Bitmap(S, S, PixelFormat.Format32bppArgb))
+        {
+            using (var g = Graphics.FromImage(bmp))
+            {
+                g.Clear(Color.Transparent);
+                g.SmoothingMode = SmoothingMode.None;
+                g.PixelOffsetMode = PixelOffsetMode.Half;
+
+                if (glyph) DrawDeviceGlyph(g, S, d!.Kind, Green);
+                else if (d?.Percent is int p)
+                    DrawNumber(g, S, p < 10 && !d.Charging ? Color.FromArgb(255, 72, 72) : Color.White, Math.Clamp(p, 0, 100));
+                else DrawDash(g, S, Color.Gray);
+            }
+            var icon = ToIcon(bmp);
+            pin.Tray.Icon = icon;
+            pin.Current?.Dispose();
+            pin.Current = icon;
+        }
+        pin.Tray.Text = TrayText.Tooltip(name, d);
+    }
+
+    /// Fills the "Show in tray" submenu: online devices, plus pinned ones that are offline right now (so they can be unpinned).
+    private void FillPinMenu(ToolStripMenuItem menu)
+    {
+        menu.DropDownItems.Clear();
+        var entries = new List<(string Id, string Name, bool Online)>();
+        foreach (var (id, st) in Slots())
+            if (DeviceFilter.IsOnline(st) && entries.All(e => e.Id != id)) entries.Add((id, st.Name, true));
+        foreach (var p in _pinned)
+            if (entries.All(e => e.Id != p.Id)) entries.Add((p.Id, p.Name, false));
+
+        if (entries.Count == 0)
+            menu.DropDownItems.Add(new ToolStripMenuItem(L.T("Cihaz yok", "No devices")) { Enabled = false });
+        foreach (var (id, name, isOnline) in entries)
+        {
+            var item = new ToolStripMenuItem(isOnline ? name : name + L.T(" (çevrimdışı)", " (offline)"))
+                { Checked = _pinned.Any(p => p.Id == id) };
+            item.Click += (_, _) => TogglePinned(id, name);
+            menu.DropDownItems.Add(item);
+        }
+        menu.DropDownItems.Add(new ToolStripSeparator());
+        menu.DropDownItems.Add(new ToolStripMenuItem(
+            L.T("Hiçbiri seçili değilse tek kulaklık simgesi görünür", "With none checked, one headset icon is shown"))
+            { Enabled = false });
+    }
+
+    private void TogglePinned(string id, string name)
+    {
+        _pinned = TrayPins.Toggle(_pinned, new PinnedDevice(id, name));
+        TrayPins.Save(_pinned);
+        SyncPinned();
+    }
 
     private void OnTrayClick(object? sender, MouseEventArgs e)
     {
@@ -452,6 +635,7 @@ internal sealed class TrayApp : ApplicationContext
             (_mouse, _atkMouse, _keyboard, _asusKeyboard, _logitech) = await others;
             try { _airpods = await AirPods.ReadAsync(); } catch (Exception ex) { Log.W("airpods: " + ex.Message); }
             CheckLowBattery();
+            SyncPinned();
             if (_popup.Visible) _popup.SetItems(Items);
             UpdateTrayIcon(info);   // the set of charging devices may have changed
         }
@@ -511,13 +695,15 @@ internal sealed class TrayApp : ApplicationContext
     {
         if (info is null)
         {
-            _headset = _headset with { Percent = null, Charging = false, Present = _device.Found,
+            // Standby: the receiver is plugged in but the headset isn't connected. Listed with that note instead of being hidden.
+            _headset = _headset with { Name = _device.ProductName ?? _headset.Name, Percent = null, Charging = false,
+                                       Present = _device.Found, Standby = _device.ReceiverOnly,
                                        Note = _device.LastError ?? L.T("Bağlı değil", "Not connected") };
             return;
         }
         string conn = _device.Path?.Contains("pid_0a96", StringComparison.OrdinalIgnoreCase) == true ? Notes.Cable : Notes.Wireless;
         string note = Notes.Make(conn, charging: info.ChargeState == 1, full: info.ChargeState == 2);
-        _headset = _headset with { Name = _device.ProductName ?? _headset.Name, Present = true,
+        _headset = _headset with { Name = _device.ProductName ?? _headset.Name, Present = true, Standby = false,
                                    Percent = (int)Math.Round(info.Percent), Charging = info.ChargeState == 1, Note = note };
     }
 
@@ -615,10 +801,12 @@ internal sealed class TrayApp : ApplicationContext
     }
 
     // Percentage only: digits fill the whole icon, pixel-scaled and centered
-    private void DrawHeadsetWithNumber(Graphics g, int S, Color c)
+    private void DrawHeadsetWithNumber(Graphics g, int S, Color c) => DrawNumber(g, S, c, _pct);
+
+    private static void DrawNumber(Graphics g, int S, Color c, int pct)
     {
         using var b = new SolidBrush(c);
-        string text = _pct.ToString();
+        string text = pct.ToString();
         int n = text.Length;
         int unitsW = n * 3 + (n - 1);
 
@@ -635,6 +823,14 @@ internal sealed class TrayApp : ApplicationContext
                     if (gl[r][col] == '#') g.FillRectangle(b, x + col * sx, y + r * sy, sx, sy);
             x += 4 * sx;
         }
+    }
+
+    /// "No reading": a short gray bar in the middle of the icon
+    private static void DrawDash(Graphics g, int S, Color c)
+    {
+        using var b = new SolidBrush(c);
+        int w = Math.Max(4, S / 2), h = Math.Max(2, S / 8);
+        g.FillRectangle(b, (S - w) / 2, (S - h) / 2, w, h);
     }
 
     private static void DrawDeviceGlyph(Graphics g, int S, DeviceKind kind, Color c)
@@ -758,17 +954,24 @@ internal sealed class TrayApp : ApplicationContext
         return p;
     }
 
-    private void ApplyBitmap(Bitmap bmp)
+    /// An icon that owns its own handle (the temporary GDI handle is released right away).
+    private static Icon ToIcon(Bitmap bmp)
     {
         IntPtr h = bmp.GetHicon();
-        using (var tmp = Icon.FromHandle(h))
+        try
         {
-            var icon = (Icon)tmp.Clone();
-            _tray.Icon = icon;
-            _currentIcon?.Dispose();
-            _currentIcon = icon;
+            using var tmp = Icon.FromHandle(h);
+            return (Icon)tmp.Clone();
         }
-        DestroyIcon(h);
+        finally { DestroyIcon(h); }
+    }
+
+    private void ApplyBitmap(Bitmap bmp)
+    {
+        var icon = ToIcon(bmp);
+        _tray.Icon = icon;
+        _currentIcon?.Dispose();
+        _currentIcon = icon;
     }
 
     private void SetIcon(string text, Color color)
@@ -830,6 +1033,8 @@ internal sealed class TrayApp : ApplicationContext
             _popup.Dispose();
             AirPods.Stop();
             _blink.Dispose();
+            _pinBlink.Dispose();
+            foreach (var p in _pinIcons.Values) { p.Tray.Visible = false; p.Tray.Dispose(); p.Current?.Dispose(); }
             _tray.Visible = false;
             _tray.Dispose();
             _currentIcon?.Dispose();

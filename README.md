@@ -11,8 +11,15 @@ the devices directly over USB HID and Bluetooth LE.
 - **Tray icon:** the headset's battery percentage, drawn with pixel-perfect digits that stay
   readable even at 16 px. While a device is charging, the icon alternates between the
   percentage and a green icon of the charging device.
+- **One tray icon per device:** right-click → **Show in tray** and tick the devices you want.
+  Each ticked device gets its own icon with its own percentage (like separate sensors in
+  HWiNFO); hover an icon for the device name. Untick everything to go back to the single
+  headset icon. On Windows 11 new tray icons start in the `^` overflow: drag them onto the taskbar.
 - **Battery panel:** click the icon to open a dark panel right above it.
-  - *My devices:* name, connection type, percentage and a battery bar for each connected device
+  - *My devices:* name, connection type, percentage and a battery bar for each connected device.
+    Devices that aren't reporting (a receiver plugged in while the device is off) are not listed,
+    except an HS80 receiver without its headset, which says so. A device that fell asleep keeps
+    showing its last reading.
   - *Nearby:* Bluetooth LE devices around you; left, right and case battery for AirPods/Beats
   - *Mouse details:* ATK/VXE mice also show the active DPI stage and the polling rate
 - **Low battery alerts:** Windows notification below 10 % and 5 % (once per device).
