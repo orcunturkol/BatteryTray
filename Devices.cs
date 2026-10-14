@@ -4,7 +4,7 @@ using HidSharp.Reports;
 
 namespace BatteryTray;
 
-internal enum DeviceKind { Headset, Mouse, Keyboard, Earbuds, Other }
+internal enum DeviceKind { Headset, Mouse, Keyboard, Earbuds, Gamepad, Other }
 
 /// One row in the popup: device type, name, battery percentage (null if unknown), charge state and a short note.
 /// The second line in the panel has the same shape for every device: "[Charging · | Full · ]Connection"

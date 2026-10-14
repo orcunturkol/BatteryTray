@@ -201,6 +201,7 @@ internal sealed class PopupForm : Form
                 DeviceKind.Headset or DeviceKind.Earbuds => "",
                 DeviceKind.Other => "\uE702",   // Bluetooth
                 DeviceKind.Mouse => "",
+                DeviceKind.Gamepad => "",   // Game controller
                 _ => "",
             };
             var iconRect = new Rectangle(row.X + D(10), row.Y, D(32), D(RowH - 8));   // icon always in the top part
