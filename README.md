@@ -22,6 +22,9 @@ the devices directly over USB HID and Bluetooth LE.
     showing its last reading.
   - *Nearby:* Bluetooth LE devices around you; left, right and case battery for AirPods/Beats
   - *Mouse details:* ATK/VXE mice also show the active DPI stage and the polling rate
+- **Keyboard lighting (ROG Azoth):** right-click → **Keyboard lighting…** to set the effect, color,
+  brightness and speed without Armoury Crate. Nothing is sent until you press **Apply**; with
+  *Save on the keyboard* ticked the setting stays after BatteryTray is closed.
 - **Low battery alerts:** Windows notification below 10 % and 5 % (once per device).
 - **Start with Windows:** toggle from the right-click menu, no admin rights required.
 - **English / Turkish UI:** English by default; switch to Turkish (or follow the Windows
@@ -36,6 +39,7 @@ the devices directly over USB HID and Bluetooth LE.
 | Mouse | ATK VXE Dragonfly R1 series (R1 Pro Max, R1 SE+ …) | *Experimental.* Receiver or USB cable; battery, active DPI and polling rate. DPI / polling rate are only shown when the mouse's settings can be read and verified, see below |
 | Keyboard | Keychron K2 Max | **Requires patched firmware**, see [`firmware/keychron-k2-max`](firmware/keychron-k2-max) |
 | Keyboard | ASUS ROG wireless keyboards: ROG Falchion, and keyboards on the Omni Receiver (e.g. Strix Scope II 96 Wireless) | Receiver or USB cable; other ROG keyboards untested |
+| Keyboard lighting | ASUS ROG Azoth, Azoth Extreme, Azoth Extreme SE, Azoth X | *Experimental.* USB cable or Omni receiver (not Bluetooth); see below |
 | Earbuds | AirPods, AirPods Pro, Beats | From Bluetooth LE advertisements, 10 % steps |
 | Mouse / keyboard | Logitech wireless devices via Lightspeed / Unifying / Bolt (e.g. G305) | *Experimental.* Devices that only report a voltage or level are shown as approximate (~) |
 
@@ -47,6 +51,14 @@ The mouse stores every setting together with a checksum, so BatteryTray only sho
 values read back valid; on a model whose memory layout differs they are simply left out rather than guessed.
 If yours shows a battery but no DPI / polling rate, run **Diagnostics** and attach the log (it contains a raw,
 read-only dump of the mouse's settings memory) to an issue. BatteryTray never writes to the mouse.
+
+**ROG Azoth lighting:** the one thing BatteryTray ever writes to a device is the Azoth's lighting, and only when you
+press **Apply** or **Lights off** (a lighting command, plus a "save" command if *Save on the keyboard* is ticked;
+nothing else is sent). The protocol comes from G-Helper and has not been checked by this project on every Azoth model.
+Wave, Ripple and Quicksand aren't offered because their packet layout isn't known. Bluetooth can't be controlled,
+since Windows exposes no control channel for it. Armoury Crate / Aura Sync running at the same time can interfere:
+close them if **Apply** reports no answer. A keyboard on the Omni receiver may be asleep; press a key and try again.
+Other ROG keyboards on the Omni receiver use the same command and will probably work, but are untested.
 
 ## Installation
 
@@ -86,7 +98,7 @@ Protocols were learned from these open-source projects:
 
 - [HeadsetControl](https://github.com/Sapd/HeadsetControl) — Corsair wireless headset protocol
 - [hs80-max-control](https://github.com/jacohallum/hs80-max-control) — HS80 MAX battery and charge properties
-- [BatteryTool](https://github.com/1gcat/BatteryTool) and [G-Helper](https://github.com/seerge/g-helper) — ASUS ROG mouse battery query
+- [BatteryTool](https://github.com/1gcat/BatteryTool) and [G-Helper](https://github.com/seerge/g-helper) — ASUS ROG mouse battery query; G-Helper also for the ROG Azoth lighting protocol
 - [battery-tray](https://github.com/mikgangal/battery-tray) — ASUS ROG keyboard (Omni Receiver) battery query
 - [k10he-battery-firmware](https://github.com/OutersGIT/k10he-battery-firmware) — Keychron 2.4 GHz battery patch
 - [OpenPods](https://github.com/adolfintel/OpenPods) — AirPods Bluetooth LE advertisement format

@@ -409,6 +409,8 @@ internal sealed class TrayApp : ApplicationContext
         pin.DropDownOpening += (_, _) => FillPinMenu(pin);
         menu.Items.Add(pin);
 
+        menu.Items.Add(L.T("Klavye aydınlatması…", "Keyboard lighting…"), null, (_, _) => ShowLighting());
+
         menu.Items.Add(L.T("Tanılama", "Diagnostics"), null, async (_, _) =>
         {
             // Writes every connected HID device and the responses of supported brands to the log, then opens it.
@@ -444,6 +446,21 @@ internal sealed class TrayApp : ApplicationContext
         // Exit is always last
         menu.Items.Add(L.T("Çıkış", "Exit"), null, (_, _) => ExitThread());
         return menu;
+    }
+
+    // ROG Azoth lighting window: one at a time
+    private LightingForm? _lightingForm;
+
+    private void ShowLighting()
+    {
+        if (_lightingForm is { IsDisposed: false })
+        {
+            _lightingForm.Activate();
+            return;
+        }
+        _lightingForm = new LightingForm();
+        _lightingForm.Show();
+        _lightingForm.Activate();
     }
 
     private static void OpenLog()
@@ -1139,6 +1156,7 @@ internal sealed class TrayApp : ApplicationContext
         catch (Exception ex) { Log.W("[HID] dump error: " + ex.Message); }
 
         try { AsusKeyboard.Diagnose(); } catch (Exception ex) { Log.W("[ASUS diag] " + ex); }
+        try { AsusLighting.Diagnose(); } catch (Exception ex) { Log.W("[Azoth RGB diag] " + ex); }
         try { AtkMouse.Diagnose(); } catch (Exception ex) { Log.W("[ATK diag] " + ex); }
         Log.W("========== Diagnostics finished ==========");
     }
@@ -1153,6 +1171,7 @@ internal sealed class TrayApp : ApplicationContext
             AirPods.Stop();
             _blink.Dispose();
             _pinBlink.Dispose();
+            _lightingForm?.Dispose();
             foreach (var p in _pinIcons.Values) { p.Tray.Visible = false; p.Tray.Dispose(); p.Current?.Dispose(); }
             _tray.Visible = false;
             _tray.Dispose();

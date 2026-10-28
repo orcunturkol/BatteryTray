@@ -199,6 +199,10 @@ internal static class AsusKeyboard
     private const uint KeyboardUsage = 0x00010006;   // Generic Desktop / Keyboard
     private static bool _loggedOnce;
 
+    /// One conversation with the keyboard's vendor channel at a time: battery polls, Diagnostics and the lighting
+    /// writes (AsusLighting) all take this, so their replies can't get mixed up.
+    internal static readonly object Gate = new();
+
     private static bool HasUsage(HidDevice d, Func<uint, bool> match)
     {
         try { return d.GetReportDescriptor().DeviceItems.SelectMany(i => i.Usages.GetAllValues()).Any(match); }
@@ -210,6 +214,11 @@ internal static class AsusKeyboard
     /// queries to the vendor channels of devices that have a keyboard interface, logging the responses.
     /// Runs once automatically at startup, then via "Diagnostics" in the menu.
     public static void Diagnose()
+    {
+        lock (Gate) DiagnoseCore();
+    }
+
+    private static void DiagnoseCore()
     {
         Log.W("========== ASUS diagnostics started ==========");
         var all = DeviceList.Local.GetHidDevices(0x0B05).ToList();
@@ -297,6 +306,11 @@ internal static class AsusKeyboard
     }
 
     public static DeviceStatus Read()
+    {
+        lock (Gate) return ReadCore();
+    }
+
+    private static DeviceStatus ReadCore()
     {
         // The ASUS probe dump only runs from the Diagnostics menu item, never on its own
         var all = DeviceList.Local.GetHidDevices(0x0B05).ToList();
