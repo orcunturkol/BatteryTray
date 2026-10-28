@@ -20,6 +20,9 @@ cihazlarla doğrudan USB HID ve Bluetooth LE üzerinden konuşur.
     olmadan takılı HS80 alıcısıdır, bunu belirtir. Uykuya geçen cihaz son değerini göstermeye devam eder.
   - *Yakındakiler:* çevredeki Bluetooth LE cihazları; AirPods/Beats için sol, sağ ve kutu pili
   - *Fare ayrıntıları:* ATK/VXE fareler için etkin DPI kademesi ve tarama (polling) hızı da gösterilir
+- **Klavye aydınlatması (ROG Azoth):** sağ tık → **Klavye aydınlatması…** ile efekt, renk, parlaklık ve hızı
+  Armoury Crate olmadan ayarla. **Uygula**'ya basana kadar hiçbir şey gönderilmez; *Klavyeye kaydet*
+  işaretliyse ayar BatteryTray kapandıktan sonra da kalır.
 - **Düşük pil bildirimi:** %10 ve %5'in altında Windows bildirimi (cihaz başına bir kez).
 - **Windows ile başlat:** sağ tık menüsünden açılıp kapatılır, yönetici izni gerekmez.
 - **Türkçe / İngilizce arayüz:** varsayılan dil İngilizce; sağ tık → **Language** menüsünden
@@ -34,6 +37,7 @@ cihazlarla doğrudan USB HID ve Bluetooth LE üzerinden konuşur.
 | Fare | ATK VXE Dragonfly R1 serisi (R1 Pro Max, R1 SE+ …) | *Deneysel.* Alıcı ya da USB kablo; pil, etkin DPI ve tarama hızı. DPI / tarama hızı yalnızca farenin ayarları okunup doğrulanabilirse gösterilir, aşağıya bak |
 | Klavye | Keychron K2 Max | **Yamalı firmware gerekir**, bkz. [`firmware/keychron-k2-max`](firmware/keychron-k2-max) |
 | Klavye | ASUS ROG kablosuz klavyeler: ROG Falchion ve Omni Receiver ile bağlanan klavyeler (ör. Strix Scope II 96 Wireless) | Alıcı ya da USB kablo; diğer ROG klavyeler denenmedi |
+| Klavye aydınlatması | ASUS ROG Azoth, Azoth Extreme, Azoth Extreme SE, Azoth X | *Deneysel.* USB kablo ya da Omni alıcı (Bluetooth değil); aşağıya bak |
 | Kulak içi | AirPods, AirPods Pro, Beats | Bluetooth LE yayınından, 10'ar puanlık hassasiyet |
 | Fare / klavye | Lightspeed / Unifying / Bolt alıcılı Logitech cihazlar (ör. G305) | *Deneysel.* Sadece voltaj ya da seviye bildiren cihazlar yaklaşık (~) gösterilir |
 
@@ -45,6 +49,14 @@ Fare her ayarı bir sağlama (checksum) değeriyle birlikte saklar; bu yüzden B
 yalnızca değerler geçerli okunursa gösterir. Bellek düzeni farklı bir modelde bu alanlar tahmin edilmez,
 sadece gösterilmez. Pil görünüp DPI / tarama hızı görünmüyorsa **Tanılama**'yı çalıştırıp log'u bir issue'ya ekle
 (log, farenin ayar belleğinin ham ve salt okunur dökümünü içerir). BatteryTray fareye asla yazmaz.
+
+**ROG Azoth aydınlatması:** BatteryTray'in bir cihaza yazdığı tek şey Azoth'un aydınlatmasıdır ve yalnızca
+**Uygula** ya da **Işıkları kapat**'a bastığında yazar (bir aydınlatma komutu, *Klavyeye kaydet* işaretliyse bir de
+"kaydet" komutu; başka hiçbir şey gönderilmez). Protokol G-Helper'dan alındı; bu proje her Azoth modelinde
+denemedi. Dalga, Dalgacık ve Quicksand efektlerinin paket düzeni bilinmediği için sunulmaz. Windows Bluetooth için
+kontrol kanalı sunmadığından Bluetooth kontrol edilemez. Armoury Crate / Aura Sync aynı anda açıksa karışabilir:
+**Uygula** cevap yok derse kapat. Omni alıcıdaki klavye uykuda olabilir; bir tuşa basıp tekrar dene.
+Omni alıcıdaki diğer ROG klavyeler aynı komutu kullanır ve büyük olasılıkla çalışır, ama denenmedi.
 
 ## Kurulum
 
@@ -82,7 +94,7 @@ Protokoller bu açık kaynak projelerden öğrenildi:
 
 - [HeadsetControl](https://github.com/Sapd/HeadsetControl) — Corsair kablosuz kulaklık protokolü
 - [hs80-max-control](https://github.com/jacohallum/hs80-max-control) — HS80 MAX pil ve şarj özellikleri
-- [BatteryTool](https://github.com/1gcat/BatteryTool) ve [G-Helper](https://github.com/seerge/g-helper) — ASUS ROG fare pil sorgusu
+- [BatteryTool](https://github.com/1gcat/BatteryTool) ve [G-Helper](https://github.com/seerge/g-helper) — ASUS ROG fare pil sorgusu; G-Helper ayrıca ROG Azoth aydınlatma protokolü için
 - [battery-tray](https://github.com/mikgangal/battery-tray) — ASUS ROG klavye (Omni Receiver) pil sorgusu
 - [k10he-battery-firmware](https://github.com/OutersGIT/k10he-battery-firmware) — Keychron 2.4 GHz pil yaması
 - [OpenPods](https://github.com/adolfintel/OpenPods) — AirPods Bluetooth LE yayın biçimi
